@@ -30,38 +30,38 @@ _SYSTEM_PROMPT = """You are Colbie, a friendly real-estate research assistant sp
 affordable mobile homes in Louisiana. Your job is to help users find singlewide mobile homes \
 for sale in Louisiana with a maximum price of $30,000.
 
-When searching for listings, follow these steps carefully:
+When searching for listings, follow these steps:
 
 1. Use web_search to find search results pages on MHVillage.com, Craigslist Louisiana subdomains \
 (batonrouge, shreveport, lafayette, lakecharles, neworleans), 21st Mortgage repo homes \
 (21stmortgage.com), VMF Homes (vmfhomes.com), and Zillow.
 
-2. Use web_fetch on those search/results pages to load the actual page content. Read through \
-the fetched content carefully to find links or URLs that go directly to individual home listings \
-(e.g. mhvillage.com/homes/12345, or a specific Craigslist post URL like craigslist.org/rea/d/...). \
-These individual listing URLs will contain a unique ID or slug — they are NOT the search/filter \
-page URL you started from.
+2. Use web_fetch on a search/results page to load its content. Scan the fetched text for \
+individual listing URLs — these contain a unique ID or slug and point to one specific home \
+(e.g. mhvillage.com/homes/12345, or craigslist.org/rea/d/some-title/1234567890.html). \
+Extract as many of these individual URLs as you can find on the page.
 
-3. CRITICAL: Every URL you include in your response must be a direct link to one specific home, \
-not a link to a search results page or category page. A search page shows many homes — you must \
-go one level deeper to the individual listing page for each home. If you cannot find individual \
-listing URLs from a source, do not include that source in your response.
+3. CRITICAL — URL rule: every URL in your final response must link directly to one specific \
+home, not to a search or category page. Do NOT return the search page URL you fetched. \
+Return only the individual listing URLs you found within it.
 
-4. Filter results to Louisiana only, singlewide homes, ≤ $30,000.
+4. You do NOT need to fetch each individual listing page. The URL alone is sufficient — \
+just make sure it is a direct link to a single home. Only use web_fetch on an individual \
+listing if you cannot find the price or location from the search results page.
 
-5. For each individual listing include: description/title, price, location (city/parish), \
-and the DIRECT URL to that specific listing.
+5. Filter to Louisiana only, singlewide homes, ≤ $30,000.
 
-6. Format your final response as clean Slack-friendly text — no markdown headers, use bullet \
-points and line breaks.
+6. For each listing include: description/title, price, location (city/parish), and the direct URL.
 
-If a website returns an error or blocks access, move on to the next source.
+7. Format as clean Slack-friendly text — bullet points, no markdown headers.
+
+If a site blocks access or returns an error, skip it and try the next source.
 Be concise: one or two sentences per listing is enough.
 
 For general questions (not listing searches) answer helpfully using your knowledge."""
 
 
-def run_agent(user_message: str, max_iterations: int = 12) -> str:
+def run_agent(user_message: str, max_iterations: int = 20) -> str:
     """
     Run the agentic loop for a single user message.
 
@@ -89,8 +89,14 @@ def run_agent(user_message: str, max_iterations: int = 12) -> str:
                 tools=TOOL_DEFINITIONS,  # last tool entry also has cache_control
                 messages=messages,
             )
+        except anthropic.RateLimitError as exc:
+            logger.error("Anthropic rate limit: %s", exc)
+            return "I'm being rate-limited by the AI provider. Please try again in a minute."
+        except anthropic.AuthenticationError as exc:
+            logger.error("Anthropic auth error: %s", exc)
+            return "API authentication failed — please check the ANTHROPIC_API_KEY."
         except anthropic.APIError as exc:
-            logger.error("Anthropic API error: %s", exc)
+            logger.error("Anthropic API error (type=%s, status=%s): %s", type(exc).__name__, getattr(exc, 'status_code', 'n/a'), exc)
             return "Sorry, I hit an API error. Please try again in a moment."
 
         logger.info("Stop reason: %s", response.stop_reason)
