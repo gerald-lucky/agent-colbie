@@ -6,6 +6,7 @@ Registered onto the Bolt App in main.py.  Handles:
   - message      : Direct messages (DMs) to the bot
 """
 import logging
+import re
 
 from slack_bolt import App
 
@@ -15,35 +16,83 @@ logger = logging.getLogger(__name__)
 
 _THINKING_MSG = "_Searching listings... this may take up to a minute._"
 
+# Strip Slack mention tokens like <@U12345>
+_MENTION_RE = re.compile(r"<@[A-Z0-9]+>")
+
+
+def _strip_mentions(text: str) -> str:
+    return _MENTION_RE.sub("", text).strip()
+
+
+def _get_thread_context(client, channel: str, thread_ts: str, current_ts: str) -> str:
+    """
+    Fetch previous messages in a thread and return them as a context string
+    so the agent remembers what was already discussed.
+    Returns empty string if the thread has no prior messages or on error.
+    """
+    try:
+        result = client.conversations_replies(
+            channel=channel,
+            ts=thread_ts,
+            limit=20,
+        )
+        messages = result.get("messages", [])
+        # Exclude the current (just-sent) message
+        prior = [m for m in messages if m.get("ts") != current_ts]
+        if not prior:
+            return ""
+
+        lines = []
+        for m in prior:
+            # Label bot messages vs user messages
+            if m.get("bot_id") or m.get("app_id"):
+                speaker = "Colbie"
+            else:
+                speaker = "User"
+            text = _strip_mentions(m.get("text", "")).strip()
+            if text:
+                lines.append(f"{speaker}: {text}")
+
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.warning("Could not fetch thread context: %s", exc)
+        return ""
+
 
 def register_handlers(app: App) -> None:
 
     @app.event("app_mention")
-    def handle_mention(body, say):
+    def handle_mention(body, say, client):
         """
         User @-mentions the bot in a channel.
-        Strips the mention token and passes the rest to the agent.
+        Passes thread history as context so Colbie remembers the conversation.
         """
         event = body["event"]
-        raw_text: str = event.get("text", "")
+        channel = event["channel"]
+        current_ts = event["ts"]
+        thread_ts = event.get("thread_ts", current_ts)
 
-        # Slack encodes the mention as "<@UXXXXXXXX> rest of message"
-        # Strip everything up to and including the first ">"
-        if ">" in raw_text:
-            user_text = raw_text.split(">", 1)[1].strip()
-        else:
-            user_text = raw_text.strip()
-
+        user_text = _strip_mentions(event.get("text", ""))
         if not user_text:
             user_text = "Find me the latest singlewide mobile homes for sale in Louisiana under $30,000."
 
-        thread_ts = event.get("thread_ts", event["ts"])
+        # Build context from prior thread messages (if this is a reply in a thread)
+        thread_context = ""
+        if event.get("thread_ts"):
+            thread_context = _get_thread_context(client, channel, thread_ts, current_ts)
 
-        # Acknowledge immediately so the user sees feedback
+        if thread_context:
+            full_message = (
+                f"[Previous conversation in this thread:]\n{thread_context}\n\n"
+                f"[New message from user:]\n{user_text}"
+            )
+        else:
+            full_message = user_text
+
         say(text=_THINKING_MSG, thread_ts=thread_ts)
 
         try:
-            reply = run_agent(user_text)
+            reply = run_agent(full_message)
         except Exception as exc:
             logger.error("Agent error on mention: %s", exc, exc_info=True)
             reply = "Sorry, something went wrong. Please try again in a moment."
@@ -58,11 +107,9 @@ def register_handlers(app: App) -> None:
         """
         event = body.get("event", {})
 
-        # Ignore bot messages and edited/deleted subtypes
         if event.get("bot_id") or event.get("subtype"):
             return
 
-        # Only handle DMs (channel_type == "im")
         if event.get("channel_type") != "im":
             return
 
