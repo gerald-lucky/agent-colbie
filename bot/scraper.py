@@ -5,6 +5,7 @@ All functions return strings or lists — never raise, always degrade gracefully
 import logging
 import random
 import time
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -12,7 +13,6 @@ from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
-# Rotate through realistic browser User-Agent strings to avoid basic bot detection
 _USER_AGENTS = [
     (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -44,12 +44,12 @@ def _headers() -> dict:
 
 def fetch_url(url: str, timeout: int = 15) -> str:
     """
-    Fetch a URL and return cleaned, truncated page text.
+    Fetch a URL and return page text PLUS all hyperlinks found on the page.
 
-    Uses BeautifulSoup to strip scripts/styles and return readable content.
-    Returns an error string (never raises) so Claude can handle failures gracefully.
+    Links are appended as a structured list so Claude can see individual
+    listing URLs (e.g. Craigslist post hrefs) that would otherwise be lost
+    when HTML is stripped to plain text.
     """
-    # Brief polite delay
     time.sleep(random.uniform(0.3, 1.2))
 
     try:
@@ -69,7 +69,27 @@ def fetch_url(url: str, timeout: int = 15) -> str:
 
     soup = BeautifulSoup(response.text, "lxml")
 
-    # Remove noise elements
+    # Extract links BEFORE removing tags — this is what gives Claude listing URLs
+    base = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+    links: list[str] = []
+    seen_hrefs: set[str] = set()
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        # Resolve relative URLs
+        if href.startswith("/"):
+            href = urljoin(base, href)
+        anchor = a.get_text(strip=True)
+        # Keep only real http links with meaningful anchor text, deduplicated
+        if (
+            href.startswith("http")
+            and anchor
+            and len(anchor) > 4
+            and href not in seen_hrefs
+        ):
+            seen_hrefs.add(href)
+            links.append(f"  [{anchor}] → {href}")
+
+    # Remove noise elements from text
     for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "aside"]):
         tag.decompose()
 
@@ -77,30 +97,52 @@ def fetch_url(url: str, timeout: int = 15) -> str:
     lines = [line for line in text.splitlines() if line.strip()]
     cleaned = "\n".join(lines)
 
-    # Cap at 12 000 chars to keep Claude token usage reasonable
-    if len(cleaned) > 12_000:
-        cleaned = cleaned[:12_000] + "\n\n[... page truncated ...]"
+    if len(cleaned) > 8_000:
+        cleaned = cleaned[:8_000] + "\n\n[... text truncated ...]"
+
+    # Append extracted links (up to 60) so Claude can see all URLs on the page
+    if links:
+        links_section = "\n\n--- LINKS FOUND ON THIS PAGE ---\n" + "\n".join(links[:60])
+        cleaned += links_section
 
     return cleaned
 
 
+# Track last search time to enforce a minimum gap between DDG calls
+_last_search_time: float = 0.0
+_MIN_SEARCH_GAP = 3.0  # seconds between DuckDuckGo requests
+
+
 def search_web(query: str, max_results: int = 10) -> list[dict]:
     """
-    Search DuckDuckGo and return a list of result dicts with keys:
-    title, href, body.
-
-    Returns [] on any failure so callers never need to handle exceptions.
+    Search DuckDuckGo with rate-limit protection.
+    Enforces a minimum gap between calls and retries once on failure.
+    Returns [] on failure so callers never need to handle exceptions.
     """
-    try:
-        with DDGS() as ddgs:
-            return list(
-                ddgs.text(
-                    query,
-                    region="us-en",
-                    safesearch="off",
-                    max_results=max_results,
+    global _last_search_time
+
+    # Enforce minimum gap to avoid DDG rate limits
+    elapsed = time.time() - _last_search_time
+    if elapsed < _MIN_SEARCH_GAP:
+        time.sleep(_MIN_SEARCH_GAP - elapsed)
+
+    for attempt in range(2):
+        try:
+            with DDGS() as ddgs:
+                results = list(
+                    ddgs.text(
+                        query,
+                        region="us-en",
+                        safesearch="off",
+                        max_results=max_results,
+                    )
                 )
-            )
-    except Exception as exc:
-        logger.error("DuckDuckGo search failed for %r: %s", query, exc)
-        return []
+            _last_search_time = time.time()
+            return results
+        except Exception as exc:
+            logger.error("DuckDuckGo search failed for %r (attempt %d): %s", query, attempt + 1, exc)
+            if attempt == 0:
+                time.sleep(5)  # Wait before retry
+
+    _last_search_time = time.time()
+    return []
