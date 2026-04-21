@@ -30,14 +30,29 @@ _SYSTEM_PROMPT = """You are Colbie, a friendly real-estate research assistant sp
 affordable mobile homes in Louisiana. Your job is to help users find singlewide mobile homes \
 for sale in Louisiana with a maximum price of $30,000.
 
-When searching for listings:
-1. Use web_search to find relevant URLs on MHVillage.com, Craigslist Louisiana subdomains \
+When searching for listings, follow these steps carefully:
+
+1. Use web_search to find search results pages on MHVillage.com, Craigslist Louisiana subdomains \
 (batonrouge, shreveport, lafayette, lakecharles, neworleans), 21st Mortgage repo homes \
 (21stmortgage.com), VMF Homes (vmfhomes.com), and Zillow.
-2. Use web_fetch to retrieve listing pages and extract details.
-3. Filter results to Louisiana only, singlewide homes, ≤ $30,000.
-4. For each listing include: description/title, price, location (city/parish), and the URL.
-5. Format your final response as clean Slack-friendly text — no markdown headers, use bullet \
+
+2. Use web_fetch on those search/results pages to load the actual page content. Read through \
+the fetched content carefully to find links or URLs that go directly to individual home listings \
+(e.g. mhvillage.com/homes/12345, or a specific Craigslist post URL like craigslist.org/rea/d/...). \
+These individual listing URLs will contain a unique ID or slug — they are NOT the search/filter \
+page URL you started from.
+
+3. CRITICAL: Every URL you include in your response must be a direct link to one specific home, \
+not a link to a search results page or category page. A search page shows many homes — you must \
+go one level deeper to the individual listing page for each home. If you cannot find individual \
+listing URLs from a source, do not include that source in your response.
+
+4. Filter results to Louisiana only, singlewide homes, ≤ $30,000.
+
+5. For each individual listing include: description/title, price, location (city/parish), \
+and the DIRECT URL to that specific listing.
+
+6. Format your final response as clean Slack-friendly text — no markdown headers, use bullet \
 points and line breaks.
 
 If a website returns an error or blocks access, move on to the next source.
@@ -136,8 +151,12 @@ def run_daily_digest() -> str:
         "Search MHVillage.com, Craigslist Louisiana (batonrouge, shreveport, "
         "lafayette, lakecharles, neworleans subdomains), 21st Mortgage repo homes, "
         "and VMF Homes. "
-        "Return as many listings as you can find (aim for 5-15). "
-        "For each listing include: title/description, price, city/parish, and the URL. "
+        "For each source: fetch the search results page, then find and follow the individual "
+        "listing links within that page. Each result you return must be a direct link to one "
+        "specific home (e.g. mhvillage.com/homes/12345 or a specific Craigslist post), "
+        "NOT a link to a search or category page. "
+        "Return as many individual listings as you can find (aim for 5-15). "
+        "For each listing include: title/description, price, city/parish, and the direct URL. "
         "Group results by source site."
     )
     return run_agent(prompt)
