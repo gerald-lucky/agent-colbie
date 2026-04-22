@@ -56,14 +56,15 @@ CRITICAL URL rule: every URL in your final answer must link to ONE specific home
 Never return a search page or browse/county page. Use only individual listing URLs \
 found in the LINKS sections of fetched pages.
 
-SINGLEWIDE FILTER — this is mandatory, not optional:
-Only include listings that are confirmed singlewide homes. Exclude any listing that \
-mentions: double, doublewide, double-wide, double wide, DW, 2-section, two section, \
-multi-section, triplewide, or any wording that indicates more than one section. \
-If a listing does not specify the type and you cannot confirm it is singlewide, exclude it. \
-When in doubt, leave it out.
+SIZE FILTER — mandatory:
+Most listings show dimensions (e.g. "16x76", "14x60", "28x56"). For every listing:
+1. Find the dimensions in the listing text.
+2. Multiply length × width to get square footage.
+3. If square footage is over 1,550 sq ft — exclude the listing, do not include it.
+4. If no dimensions are listed and you cannot determine the size — exclude the listing.
+Only include listings where computed square footage is 1,550 sq ft or less.
 
-Filter: Louisiana only, singlewide only (see above), ≤ $30,000 (or user's specified price).
+Filter: Louisiana only, ≤ 1,550 sq ft (see above), ≤ $30,000 (or user's specified price).
 For each listing: title/description, price, location, direct URL.
 Format: clean Slack bullet points, no markdown headers.
 Never end your response mid-task — complete all fetching before replying.
