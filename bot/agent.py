@@ -41,10 +41,10 @@ Fetch https://www.21stmortgage.com and look in the LINKS section for a repo or \
 "homes for sale" link. Follow it to find Louisiana listings.
 
 STEP 3 — Craigslist (reliable fallback, fetch directly — no search needed):
-  https://batonrouge.craigslist.org/search/rea?query=mobile+home&max_price=30000
-  https://shreveport.craigslist.org/search/rea?query=mobile+home&max_price=30000
-  https://lafayette.craigslist.org/search/rea?query=mobile+home&max_price=30000
-  https://lakecharles.craigslist.org/search/rea?query=mobile+home&max_price=30000
+  https://batonrouge.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://shreveport.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://lafayette.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://lakecharles.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
 Individual Craigslist post URLs look like: [city].craigslist.org/rea/d/[title]/[id].html — \
 find them in the LINKS FOUND ON THIS PAGE section of the fetched content.
 
@@ -56,7 +56,14 @@ CRITICAL URL rule: every URL in your final answer must link to ONE specific home
 Never return a search page or browse/county page. Use only individual listing URLs \
 found in the LINKS sections of fetched pages.
 
-Filter: Louisiana only, singlewide, ≤ $30,000 (or user's specified price).
+SINGLEWIDE FILTER — this is mandatory, not optional:
+Only include listings that are confirmed singlewide homes. Exclude any listing that \
+mentions: double, doublewide, double-wide, double wide, DW, 2-section, two section, \
+multi-section, triplewide, or any wording that indicates more than one section. \
+If a listing does not specify the type and you cannot confirm it is singlewide, exclude it. \
+When in doubt, leave it out.
+
+Filter: Louisiana only, singlewide only (see above), ≤ $30,000 (or user's specified price).
 For each listing: title/description, price, location, direct URL.
 Format: clean Slack bullet points, no markdown headers.
 Never end your response mid-task — complete all fetching before replying.
