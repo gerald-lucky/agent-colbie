@@ -27,30 +27,36 @@ def _get_client() -> anthropic.Anthropic:
 
 # Static system prompt — cached on first use, refreshed every 5 minutes.
 _SYSTEM_PROMPT = """You are Colbie, a friendly real-estate research assistant specialising in \
-affordable mobile homes in Louisiana. The user's preferred sources are VMF Homes and \
+affordable mobile homes in Louisiana and Alabama. The user's preferred sources are VMF Homes and \
 21st Mortgage repo homes — always check these first.
 
 SEARCH STRATEGY:
 
 STEP 1 — VMF Homes (priority source):
 Fetch https://www.vmfhomes.com and look in the LINKS section for a link to repo/for-sale homes. \
-Follow that link to find Louisiana listings. Individual listing URLs will appear in the LINKS section.
+Follow that link to find Louisiana AND Alabama listings. Individual listing URLs will appear in the LINKS section.
 
 STEP 2 — 21st Mortgage repo homes (priority source):
 Fetch https://www.21stmortgage.com and look in the LINKS section for a repo or \
-"homes for sale" link. Follow it to find Louisiana listings.
+"homes for sale" link. Follow it to find Louisiana AND Alabama listings.
 
 STEP 3 — Craigslist (reliable fallback, fetch directly — no search needed):
+Louisiana cities:
   https://batonrouge.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
   https://shreveport.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
   https://lafayette.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
   https://lakecharles.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+Alabama cities:
+  https://birmingham.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://huntsville.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://mobile.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
+  https://montgomery.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
 Individual Craigslist post URLs look like: [city].craigslist.org/rea/d/[title]/[id].html — \
 find them in the LINKS FOUND ON THIS PAGE section of the fetched content.
 
 STEP 4 — web_search (use sparingly — max 2 calls total, DDG rate-limits aggressively):
 Only if Steps 1-3 yield insufficient results. Good queries:
-  "site:mhvillage.com singlewide louisiana for sale under 30000"
+  "site:mhvillage.com singlewide louisiana alabama for sale under 30000"
 
 CRITICAL URL rule: every URL in your final answer must link to ONE specific home. \
 Never return a search page or browse/county page. Use only individual listing URLs \
@@ -64,8 +70,8 @@ Most listings show dimensions (e.g. "16x76", "14x60", "28x56"). For every listin
 4. If no dimensions are listed and you cannot determine the size — exclude the listing.
 Only include listings where computed square footage is 1,550 sq ft or less.
 
-Filter: Louisiana only, ≤ 1,550 sq ft (see above), ≤ $30,000 (or user's specified price).
-For each listing: title/description, price, location, direct URL.
+Filter: Louisiana or Alabama only, ≤ 1,550 sq ft (see above), ≤ $30,000 (or user's specified price).
+For each listing: title/description, price, location (city and state), direct URL.
 Format: clean Slack bullet points, no markdown headers.
 Never end your response mid-task — complete all fetching before replying.
 If results are genuinely scarce at the requested price, say so honestly."""
@@ -157,22 +163,35 @@ def run_agent(user_message: str, max_iterations: int = 20) -> str:
     return "\n".join(last_texts).strip() or "I ran out of search steps. Please try a more specific query."
 
 
-def run_daily_digest() -> str:
+def run_daily_digest(seen_urls: set[str] | None = None) -> str:
     """
     Run the agent with a fixed prompt for the daily 8 AM listing digest.
+
+    seen_urls: URLs already posted this week. Passed to the agent so it skips
+               repeat listings and only surfaces fresh homes.
     """
+    exclusion_block = ""
+    if seen_urls:
+        url_list = "\n".join(f"  - {u}" for u in sorted(seen_urls)[:150])
+        exclusion_block = (
+            f"\n\nDO NOT include any of these URLs — they were already posted earlier "
+            f"this week and the user has already seen them:\n{url_list}\n"
+            "Skip any listing whose URL matches one above. Only return listings with new URLs."
+        )
+
     prompt = (
-        "Find today's latest singlewide mobile homes for sale in Louisiana "
+        "Find today's latest singlewide mobile homes for sale in Louisiana AND Alabama "
         "with a maximum price of $30,000. "
-        "Search MHVillage.com, Craigslist Louisiana (batonrouge, shreveport, "
-        "lafayette, lakecharles, neworleans subdomains), 21st Mortgage repo homes, "
-        "and VMF Homes. "
+        "Search VMF Homes, 21st Mortgage repo homes, "
+        "and Craigslist (Louisiana cities: batonrouge, shreveport, lafayette, lakecharles; "
+        "Alabama cities: birmingham, huntsville, mobile, montgomery). "
         "For each source: fetch the search results page, then find and follow the individual "
         "listing links within that page. Each result you return must be a direct link to one "
-        "specific home (e.g. mhvillage.com/homes/12345 or a specific Craigslist post), "
+        "specific home (e.g. a specific Craigslist post or VMF listing page), "
         "NOT a link to a search or category page. "
         "Return as many individual listings as you can find (aim for 5-15). "
-        "For each listing include: title/description, price, city/parish, and the direct URL. "
+        "For each listing include: title/description, price, city and state, and the direct URL. "
         "Group results by source site."
+        + exclusion_block
     )
     return run_agent(prompt)

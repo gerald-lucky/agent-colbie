@@ -7,12 +7,51 @@ exactly once (no per-worker duplication).
 """
 import logging
 import os
+import re
+import time
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
+
+# Matches bare https://... URLs and Slack's <https://...|text> link format
+_SLACK_LINK_RE = re.compile(r"<(https?://[^|>\s]+)[|>]")
+_BARE_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _get_seen_urls(bolt_app, channel: str) -> set[str]:
+    """
+    Fetch the past 7 days of messages from the listings channel and return
+    every URL that appears, so the daily digest can skip repeat listings.
+    Uses Slack as the persistence store — survives Railway redeploys.
+    """
+    seen: set[str] = set()
+    oldest = str(time.time() - 7 * 24 * 3600)
+    cursor = None
+
+    try:
+        while True:
+            kwargs: dict = {"channel": channel, "oldest": oldest, "limit": 200}
+            if cursor:
+                kwargs["cursor"] = cursor
+            result = bolt_app.client.conversations_history(**kwargs)
+            for msg in result.get("messages", []):
+                text = msg.get("text", "")
+                for m in _SLACK_LINK_RE.finditer(text):
+                    seen.add(m.group(1).rstrip(".,;)"))
+                for m in _BARE_URL_RE.finditer(text):
+                    seen.add(m.group(0).rstrip(".,;)"))
+            cursor = result.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+    except Exception as exc:
+        logger.warning("Could not fetch channel history for URL dedup: %s", exc)
+
+    logger.info("Found %d seen URLs from the past 7 days in %s", len(seen), channel)
+    return seen
+
 
 _scheduler: BackgroundScheduler | None = None
 _CENTRAL = pytz.timezone("America/Chicago")
@@ -68,15 +107,17 @@ def _post_daily_listings(bolt_app, channel: str) -> None:
         bolt_app.client.chat_postMessage(
             channel=channel,
             text=(
-                "Good morning! Searching for today's Louisiana singlewide mobile home "
+                "Good morning! Searching for today's Louisiana & Alabama singlewide mobile home "
                 "listings under $30,000 — I'll be back in a minute with results."
             ),
         )
     except Exception as exc:
         logger.error("Failed to post searching notice: %s", exc)
 
+    seen_urls = _get_seen_urls(bolt_app, channel)
+
     try:
-        digest = run_daily_digest()
+        digest = run_daily_digest(seen_urls=seen_urls)
         bolt_app.client.chat_postMessage(
             channel=channel,
             text=f"*Today's Mobile Home Listings*\n\n{digest}",
