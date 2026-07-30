@@ -40,23 +40,9 @@ STEP 2 — 21st Mortgage repo homes (priority source):
 Fetch https://www.21stmortgage.com and look in the LINKS section for a repo or \
 "homes for sale" link. Follow it to find Louisiana AND Alabama listings.
 
-STEP 3 — Craigslist (reliable fallback, fetch directly — no search needed):
-Louisiana cities:
-  https://batonrouge.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://shreveport.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://lafayette.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://lakecharles.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-Alabama cities:
-  https://birmingham.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://huntsville.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://mobile.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-  https://montgomery.craigslist.org/search/rea?query=singlewide+mobile+home&max_price=30000
-Individual Craigslist post URLs look like: [city].craigslist.org/rea/d/[title]/[id].html — \
-find them in the LINKS FOUND ON THIS PAGE section of the fetched content.
-
-STEP 4 — web_search (use sparingly — max 2 calls total, DDG rate-limits aggressively):
-Only if Steps 1-3 yield insufficient results. Good queries:
-  "site:mhvillage.com singlewide louisiana alabama for sale under 30000"
+STEP 3 — web_search (use sparingly — max 2 calls total, DDG rate-limits aggressively):
+Only if Steps 1-2 yield insufficient results. Good queries:
+  "site:mhvillage.com singlewide louisiana alabama for sale under 20000"
 
 CRITICAL URL rule: every URL in your final answer must link to ONE specific home. \
 Never return a search page or browse/county page. Use only individual listing URLs \
@@ -70,7 +56,7 @@ Most listings show dimensions (e.g. "16x76", "14x60", "28x56"). For every listin
 4. If no dimensions are listed and you cannot determine the size — exclude the listing.
 Only include listings where computed square footage is 1,550 sq ft or less.
 
-Filter: Louisiana or Alabama only, ≤ 1,550 sq ft (see above), ≤ $30,000 (or user's specified price).
+Filter: Louisiana or Alabama only, ≤ 1,550 sq ft (see above), ≤ $20,000 (or user's specified price).
 For each listing: title/description, price, location (city and state), direct URL.
 Format: clean Slack bullet points, no markdown headers.
 Never end your response mid-task — complete all fetching before replying.
@@ -181,13 +167,11 @@ def run_daily_digest(seen_urls: set[str] | None = None) -> str:
 
     prompt = (
         "Find today's latest singlewide mobile homes for sale in Louisiana AND Alabama "
-        "with a maximum price of $30,000. "
-        "Search VMF Homes, 21st Mortgage repo homes, "
-        "and Craigslist (Louisiana cities: batonrouge, shreveport, lafayette, lakecharles; "
-        "Alabama cities: birmingham, huntsville, mobile, montgomery). "
+        "with a maximum price of $20,000. "
+        "Search VMF Homes and 21st Mortgage repo homes. "
         "For each source: fetch the search results page, then find and follow the individual "
         "listing links within that page. Each result you return must be a direct link to one "
-        "specific home (e.g. a specific Craigslist post or VMF listing page), "
+        "specific home (e.g. a specific VMF listing page or 21st Mortgage repo listing), "
         "NOT a link to a search or category page. "
         "Return as many individual listings as you can find (aim for 5-15). "
         "For each listing include: title/description, price, city and state, and the direct URL. "

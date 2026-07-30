@@ -108,7 +108,7 @@ def _post_daily_listings(bolt_app, channel: str) -> None:
             channel=channel,
             text=(
                 "Good morning! Searching for today's Louisiana & Alabama singlewide mobile home "
-                "listings under $30,000 — I'll be back in a minute with results."
+                "listings under $20,000 — I'll be back in a minute with results."
             ),
         )
     except Exception as exc:
